@@ -84,3 +84,13 @@ test('returns null when the host is unreachable', async () => {
   const result = await fetchWindTrendHistory(fakeReq(1), 30);
   assert.equal(result, null);
 });
+
+test('returns null when the endpoint accepts the connection but never responds (timeout)', { timeout: 3000 }, async () => {
+  const server = await startFakeHistoryServer(() => {
+    // Never call res.end() - simulates a slow/hung history provider query.
+  });
+  const { port } = server.address();
+  const result = await fetchWindTrendHistory(fakeReq(port), 30, 300);
+  assert.equal(result, null);
+  server.close();
+});
