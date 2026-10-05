@@ -85,6 +85,40 @@ test('returns null when the host is unreachable', async () => {
   assert.equal(result, null);
 });
 
+test('forwards the inbound Authorization and Cookie headers to the history request', async () => {
+  let receivedHeaders = null;
+  const server = await startFakeHistoryServer((req, res) => {
+    receivedHeaders = req.headers;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ data: [['2026-01-01T00:00:00Z', 1, 2]] }));
+  });
+  const { port } = server.address();
+  const req = fakeReq(port, { headers: { authorization: 'Bearer secret-token', cookie: 'JSESSIONID=abc123' } });
+  await fetchWindTrendHistory(req, 30);
+  assert.equal(receivedHeaders.authorization, 'Bearer secret-token');
+  assert.equal(receivedHeaders.cookie, 'JSESSIONID=abc123');
+  server.close();
+});
+
+test('logs when the history API rejects the request as unauthorized', async () => {
+  const server = await startFakeHistoryServer((req, res) => {
+    res.statusCode = 401;
+    res.end('Unauthorized');
+  });
+  const { port } = server.address();
+  const originalError = console.error;
+  const calls = [];
+  console.error = (...args) => calls.push(args.join(' '));
+  try {
+    const result = await fetchWindTrendHistory(fakeReq(port), 30);
+    assert.equal(result, null);
+    assert.ok(calls.some((line) => line.includes('401')), `expected a logged 401 warning, got: ${JSON.stringify(calls)}`);
+  } finally {
+    console.error = originalError;
+  }
+  server.close();
+});
+
 test('returns null when the endpoint accepts the connection but never responds (timeout)', { timeout: 3000 }, async () => {
   const server = await startFakeHistoryServer(() => {
     // Never call res.end() - simulates a slow/hung history provider query.
