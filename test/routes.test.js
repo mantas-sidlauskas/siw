@@ -22,6 +22,7 @@ function makeServer(dataDir, selfValues = {}) {
     getSelfPath: (p) => (p in selfValues ? { value: selfValues[p] } : undefined),
     setPluginStatus: () => {},
     setPluginError: () => {},
+    error: () => {},
   };
 }
 
@@ -91,6 +92,29 @@ test('GET /components/:id/image rejects an id with invalid characters', async ()
   const res = await fetch(`${baseUrl}/components/${encodeURIComponent('bad id')}/image`);
   assert.equal(res.status, 400);
   httpServer.close();
+});
+
+test('GET /components/:id/image returns 500 instead of crashing when the renderer throws unexpectedly', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [{ id: 'depth', type: 'numeric', width: 100, height: 50, path: 'environment.depth.belowTransducer' }],
+  });
+  const server = {
+    getDataDirPath: () => dir,
+    getSelfPath: () => {
+      throw new Error('simulated SignalK server fault');
+    },
+    setPluginStatus: () => {},
+    setPluginError: () => {},
+    error: () => {},
+  };
+  const { httpServer, baseUrl } = await startApp(server);
+  try {
+    const res = await fetch(`${baseUrl}/components/depth/image`);
+    assert.equal(res.status, 500);
+  } finally {
+    httpServer.close();
+  }
 });
 
 test('GET /components/:id/image renders a windTrend placeholder when no history provider is reachable', async () => {

@@ -47,18 +47,23 @@ module.exports = function createPlugin(server) {
           return res.status(404).json({ state: 'FAILED', statusCode: 404, message: `Unknown component "${req.params.id}"` });
         }
 
-        let rendered;
-        if (component.type === 'numeric') {
-          const node = server.getSelfPath(component.path);
-          const value = node && typeof node.value === 'number' ? node.value : null;
-          rendered = renderNumeric(component, value);
-        } else {
-          const history = await fetchWindTrendHistory(req, component.windowMinutes);
-          rendered = renderWindTrend(component, history);
-        }
+        try {
+          let rendered;
+          if (component.type === 'numeric') {
+            const node = server.getSelfPath(component.path);
+            const value = node && typeof node.value === 'number' ? node.value : null;
+            rendered = renderNumeric(component, value);
+          } else {
+            const history = await fetchWindTrendHistory(req, component.windowMinutes);
+            rendered = renderWindTrend(component, history);
+          }
 
-        res.set('Content-Type', rendered.contentType);
-        res.send(rendered.buffer);
+          res.set('Content-Type', rendered.contentType);
+          res.send(rendered.buffer);
+        } catch (err) {
+          server.error(`Error rendering component "${component.id}": ${err.message}`);
+          return res.status(500).json({ state: 'FAILED', statusCode: 500, message: err.message });
+        }
       });
 
       server.setPluginStatus('Providing image-rendered components');

@@ -73,3 +73,30 @@ test('rejects a numeric component with no path', () => {
   writeConfig(dir, { components: [{ id: 'bad', type: 'numeric', width: 100, height: 100 }] });
   assert.deepEqual(loadComponents(dir), []);
 });
+
+test('rejects a component with width or height exceeding the maximum canvas size', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [
+      { id: 'too-wide', type: 'numeric', width: 1e9, height: 100, path: 'foo.bar' },
+      { id: 'too-tall', type: 'numeric', width: 100, height: 1e9, path: 'foo.bar' },
+      { id: 'ok', type: 'numeric', width: 100, height: 100, path: 'foo.bar' },
+    ],
+  });
+  const result = loadComponents(dir);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, 'ok');
+});
+
+test('clamps numeric decimals to a safe range', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [
+      { id: 'negative', type: 'numeric', width: 100, height: 100, path: 'foo.bar', decimals: -1 },
+      { id: 'huge', type: 'numeric', width: 100, height: 100, path: 'foo.bar', decimals: 101 },
+    ],
+  });
+  const result = loadComponents(dir);
+  assert.equal(result.find((c) => c.id === 'negative').decimals, 0);
+  assert.equal(result.find((c) => c.id === 'huge').decimals, 20);
+});
