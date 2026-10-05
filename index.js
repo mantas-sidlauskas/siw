@@ -1,5 +1,5 @@
 'use strict';
-const { loadComponents } = require('./lib/config');
+const { loadComponents, ID_PATTERN } = require('./lib/config');
 const { renderNumeric } = require('./lib/render-numeric');
 const { renderWindTrend } = require('./lib/render-wind-trend');
 const { fetchWindTrendHistory } = require('./lib/history-client');
@@ -18,7 +18,7 @@ module.exports = function createPlugin(server) {
     schema: () => ({ type: 'object', properties: {} }),
     registerWithRouter(router) {
       router.param('id', (req, res, next, id) => {
-        if (!/^[A-Za-z0-9-]+$/.test(id)) {
+        if (!ID_PATTERN.test(id)) {
           return res.status(400).json({ state: 'FAILED', statusCode: 400, message: 'Invalid component id' });
         }
         next();

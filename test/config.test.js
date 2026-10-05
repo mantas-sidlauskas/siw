@@ -88,6 +88,19 @@ test('rejects a component with width or height exceeding the maximum canvas size
   assert.equal(result[0].id, 'ok');
 });
 
+test('rejects a component id containing characters the HTTP route would then reject', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [
+      { id: 'bad id', type: 'numeric', width: 100, height: 100, path: 'foo.bar' },
+      { id: 'ok-id_1.2', type: 'numeric', width: 100, height: 100, path: 'foo.bar' },
+    ],
+  });
+  const result = loadComponents(dir);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, 'ok-id_1.2');
+});
+
 test('clamps numeric decimals to a safe range', () => {
   const dir = tmpDir();
   writeConfig(dir, {

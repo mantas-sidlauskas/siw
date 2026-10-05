@@ -117,6 +117,17 @@ test('GET /components/:id/image returns 500 instead of crashing when the rendere
   }
 });
 
+test('GET /components/:id/image accepts ids containing dots and underscores', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [{ id: 'wind_speed.avg', type: 'numeric', width: 100, height: 50, path: 'environment.depth.belowTransducer' }],
+  });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir, { 'environment.depth.belowTransducer': 4.2 }));
+  const res = await fetch(`${baseUrl}/components/${encodeURIComponent('wind_speed.avg')}/image`);
+  assert.equal(res.status, 200);
+  httpServer.close();
+});
+
 test('GET /components/:id/image renders a windTrend placeholder when no history provider is reachable', async () => {
   const dir = tmpDir();
   writeConfig(dir, { components: [{ id: 'windtrend', type: 'windTrend', width: 200, height: 100 }] });
