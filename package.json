@@ -1,0 +1,21 @@
+{
+  "name": "signalk-image-widgets",
+  "version": "0.1.0",
+  "description": "Renders configured SignalK paths as raster images for simple/low-power displays.",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": ["signalk-node-server-plugin"],
+  "signalk-plugin-enabled-by-default": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2"
+  },
+  "devDependencies": {
+    "express": "^4.19.2"
+  }
+}
