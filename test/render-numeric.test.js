@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadImage } = require('canvas');
+const { loadImage } = require('@napi-rs/canvas');
 const { renderNumeric } = require('../lib/render-numeric');
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -37,4 +37,12 @@ test('renders JPEG when format is jpeg', () => {
   const { buffer, contentType } = renderNumeric(component, 5);
   assert.equal(contentType, 'image/jpeg');
   assert.ok(buffer.subarray(0, 3).equals(JPEG_SIGNATURE));
+});
+
+test('applies the configured conversion to the raw value before display', () => {
+  const converted = { width: 150, height: 80, format: 'png', label: '', unit: 'kt', decimals: 1, conversion: 'mpsToKnots' };
+  const raw = { width: 150, height: 80, format: 'png', label: '', unit: 'kt', decimals: 1 };
+  // 5 m/s in knots renders different text ("9.7 kt") than 5 m/s shown unconverted ("5.0 kt"),
+  // so the two PNGs must differ when the conversion is actually applied.
+  assert.notDeepEqual(renderNumeric(converted, 5).buffer, renderNumeric(raw, 5).buffer);
 });

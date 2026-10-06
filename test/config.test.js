@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { loadComponents } = require('../lib/config');
+const { loadComponents, loadPages } = require('../lib/config');
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'siw-'));
@@ -68,6 +68,42 @@ test('defaults windTrend windowMinutes to 30', () => {
   assert.equal(result[0].windowMinutes, 30);
 });
 
+test('accepts a valid "conversion" on a numeric component and keeps it on the normalized result', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [
+      { id: 'sog', type: 'numeric', width: 100, height: 100, path: 'navigation.speedOverGround', conversion: 'mpsToKnots' },
+    ],
+  });
+  const result = loadComponents(dir);
+  assert.equal(result[0].conversion, 'mpsToKnots');
+});
+
+test('rejects a numeric component with an unknown "conversion"', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [{ id: 'sog', type: 'numeric', width: 100, height: 100, path: 'navigation.speedOverGround', conversion: 'bogus' }],
+  });
+  assert.deepEqual(loadComponents(dir), []);
+});
+
+test('normalizes a numeric component with no "conversion" to have none', () => {
+  const dir = tmpDir();
+  writeConfig(dir, { components: [{ id: 'depth', type: 'numeric', width: 100, height: 100, path: 'foo.bar' }] });
+  const result = loadComponents(dir);
+  assert.equal(result[0].conversion, undefined);
+});
+
+for (const type of ['windSpeedTrend', 'windDirectionTrend', 'maneuverScore']) {
+  test(`accepts "${type}" as a valid component type and defaults its windowMinutes to 30`, () => {
+    const dir = tmpDir();
+    writeConfig(dir, { components: [{ id: 'w', type, width: 100, height: 100 }] });
+    const result = loadComponents(dir);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].windowMinutes, 30);
+  });
+}
+
 test('rejects a numeric component with no path', () => {
   const dir = tmpDir();
   writeConfig(dir, { components: [{ id: 'bad', type: 'numeric', width: 100, height: 100 }] });
@@ -112,4 +148,63 @@ test('clamps numeric decimals to a safe range', () => {
   const result = loadComponents(dir);
   assert.equal(result.find((c) => c.id === 'negative').decimals, 0);
   assert.equal(result.find((c) => c.id === 'huge').decimals, 20);
+});
+
+test('loadPages wraps a flat "components" config as a single untitled page', () => {
+  const dir = tmpDir();
+  writeConfig(dir, { components: [{ id: 'g', type: 'numeric', width: 100, height: 100, path: 'foo.bar' }] });
+  const pages = loadPages(dir);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].title, '');
+  assert.equal(pages[0].components.length, 1);
+  assert.equal(pages[0].components[0].id, 'g');
+});
+
+test('loadPages reads a multi-page "pages" config, keeping each page\'s title and components separate', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    pages: [
+      { title: 'Nav', components: [{ id: 'depth', type: 'numeric', width: 100, height: 100, path: 'foo.bar' }] },
+      { title: 'Wind', components: [{ id: 'windtrend', type: 'windTrend', width: 100, height: 100 }] },
+    ],
+  });
+  const pages = loadPages(dir);
+  assert.equal(pages.length, 2);
+  assert.equal(pages[0].title, 'Nav');
+  assert.deepEqual(pages[0].components.map((c) => c.id), ['depth']);
+  assert.equal(pages[1].title, 'Wind');
+  assert.deepEqual(pages[1].components.map((c) => c.id), ['windtrend']);
+});
+
+test('loadPages skips invalid components within a page without dropping the rest of that page', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    pages: [
+      {
+        title: 'Mixed',
+        components: [
+          { id: 'bad', type: 'numeric', width: -10, height: 100, path: 'foo' },
+          { id: 'good', type: 'numeric', width: 100, height: 100, path: 'foo.bar' },
+        ],
+      },
+    ],
+  });
+  const pages = loadPages(dir);
+  assert.deepEqual(pages[0].components.map((c) => c.id), ['good']);
+});
+
+test('loadPages returns a single empty page when components.json is missing', () => {
+  const pages = loadPages(tmpDir());
+  assert.deepEqual(pages, [{ title: '', components: [] }]);
+});
+
+test('loadComponents flattens components across every page', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    pages: [
+      { components: [{ id: 'depth', type: 'numeric', width: 100, height: 100, path: 'foo.bar' }] },
+      { components: [{ id: 'windtrend', type: 'windTrend', width: 100, height: 100 }] },
+    ],
+  });
+  assert.deepEqual(loadComponents(dir).map((c) => c.id), ['depth', 'windtrend']);
 });

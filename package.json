@@ -4,7 +4,9 @@
   "description": "Renders configured SignalK paths as raster images for simple/low-power displays.",
   "main": "index.js",
   "license": "MIT",
-  "keywords": ["signalk-node-server-plugin"],
+  "keywords": [
+    "signalk-node-server-plugin"
+  ],
   "signalk-plugin-enabled-by-default": false,
   "engines": {
     "node": ">=18"
@@ -13,7 +15,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "canvas": "^2.11.2"
+    "@napi-rs/canvas": "^0.1.100"
   },
   "devDependencies": {
     "express": "^4.19.2"

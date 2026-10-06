@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { fetchWindTrendHistory, buildHistoryUrl, computeResolutionSeconds } = require('../lib/history-client');
+const { fetchWindTrendHistory, fetchManeuverHistory, buildHistoryUrl, computeResolutionSeconds, MANEUVER_PATHS } = require('../lib/history-client');
 
 function fakeReq(localPort, overrides = {}) {
   return {
@@ -37,6 +37,14 @@ test('buildHistoryUrl uses https when the request arrived over TLS', () => {
   const req = fakeReq(8443, { socket: { localPort: 8443, encrypted: true } });
   const url = buildHistoryUrl(req, 30);
   assert.ok(url.startsWith('https://127.0.0.1:8443/'));
+});
+
+test('buildHistoryUrl accepts a custom paths list, for maneuver detection', () => {
+  const req = fakeReq(3000);
+  const url = buildHistoryUrl(req, 30, MANEUVER_PATHS);
+  assert.ok(url.includes(encodeURIComponent(
+    'navigation.courseOverGroundTrue:avg,environment.wind.directionTrue:avg,performance.polarSpeedRatio:avg',
+  )));
 });
 
 function startFakeHistoryServer(handler) {
@@ -127,4 +135,24 @@ test('returns null when the endpoint accepts the connection but never responds (
   const result = await fetchWindTrendHistory(fakeReq(port), 30, 300);
   assert.equal(result, null);
   server.close();
+});
+
+test('fetchManeuverHistory requests COG/TWD/polarSpeedRatio and returns parsed history', async () => {
+  let requestedUrl = null;
+  const server = await startFakeHistoryServer((req, res) => {
+    requestedUrl = req.url;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ data: [['2026-01-01T00:00:00Z', 1, 2, 3]] }));
+  });
+  const { port } = server.address();
+  const result = await fetchManeuverHistory(fakeReq(port), 60);
+  assert.deepEqual(result, { data: [['2026-01-01T00:00:00Z', 1, 2, 3]] });
+  assert.ok(requestedUrl.includes(encodeURIComponent('navigation.courseOverGroundTrue')));
+  assert.ok(requestedUrl.includes(encodeURIComponent('performance.polarSpeedRatio')));
+  server.close();
+});
+
+test('fetchManeuverHistory returns null when no history provider is reachable', async () => {
+  const result = await fetchManeuverHistory(fakeReq(1), 60);
+  assert.equal(result, null);
 });
