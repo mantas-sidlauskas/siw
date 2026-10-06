@@ -101,3 +101,39 @@ test('leaves recoverySeconds null when performance never climbs back to the pre-
   assert.equal(result.recoverySeconds, null);
   assert.ok(result.dipPercent > 0);
 });
+
+test('does not score a maneuver when the pre-maneuver window has only one real sample - too little to call it a baseline', () => {
+  // Real history is often this sparse (gappy performance.polarSpeedRatio
+  // recording): a single lucky/unlucky sample isn't a reliable "before"
+  // average, so with plenty of low "during" readings a naive one-sample
+  // baseline would make almost every maneuver look like a ~100% dip.
+  const rows = [
+    row(0, 320, 0, null),
+    row(15, 320, 0, null),
+    row(30, 320, 0, null),
+    row(45, 320, 0, 0.9), // the only real pre-crossing sample
+    row(60, 40, 0, null), // crossing
+    row(75, 40, 0, 0.3),
+    row(90, 40, 0, 0.3),
+    row(105, 40, 0, 0.3),
+  ];
+  const result = detectLatestManeuver(rows);
+  assert.equal(result.type, 'tack');
+  assert.equal(result.dipPercent, null);
+  assert.equal(result.recoverySeconds, null);
+});
+
+test('does not score the dip when the during-maneuver window has only one real sample', () => {
+  const rows = [
+    row(0, 320, 0, 0.9),
+    row(15, 320, 0, 0.85),
+    row(30, 320, 0, null),
+    row(45, 40, 0, 0.4), // crossing, with only this one real "during" sample
+    row(60, 40, 0, null),
+    row(75, 40, 0, null),
+  ];
+  const result = detectLatestManeuver(rows);
+  assert.equal(result.type, 'tack');
+  assert.equal(result.dipPercent, null);
+  assert.equal(result.recoverySeconds, null);
+});
