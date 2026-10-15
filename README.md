@@ -1,9 +1,14 @@
 # signalk-image-widgets
 
 A simple SignalK server plugin that renders configured SignalK paths as
-raster images (PNG or JPEG) — one image per configured component — for
-simple/low-power clients that poll an `<img>` tag and can't run a full
-SVG/JS UI.
+images — one image per configured component — for simple/low-power clients
+that poll an `<img>` tag and can't run a full JS UI. Each component picks
+its own output via `"format"`: `"png"` (default) or `"jpeg"` render a raster
+image; `"svg"` renders the same layout as vector SVG instead — useful on
+clients whose browser handles SVG more cleanly than raster decoding, or
+where the sharper vector text is worth it. All three are served the same
+way, from the same `<img src="...">` tag, so switching a component between
+them is just an edit to `components.json`.
 
 ## Component types
 
@@ -55,12 +60,22 @@ page.
     bottom, cycling to the next page and wrapping back to the first after
     the last; the auto-refresh keeps reloading the same page. With zero or
     one page, no pagination control is shown.
+- `GET /dashboard-live` — same pages/components as `/dashboard`, but
+  **numeric** components render as a plain value that updates in place over
+  a WebSocket to SignalK's own delta stream (`/signalk/v1/stream`), instead
+  of a periodically-reloaded image — no 30-second lag, no full-page
+  refresh. Other component types (the trend charts, maneuver score) still
+  render as `<img>`s, refreshed via a 30-second JS interval instead of a
+  page reload. This needs a browser capable of WebSockets and running JS
+  reliably; `/dashboard` remains the safe, zero-JS fallback for clients
+  that aren't, or where the simpler version is preferred. Supports
+  `?page=N` the same way as `/dashboard`.
 - `GET /components` — lists configured components (`id`, `type`, `width`,
   `height`).
 - `GET /components/:id/image` — renders that component fresh and returns
   the image bytes with the matching `Content-Type`.
 
-All three routes are registered as readonly-accessible (via
+All four routes are registered as readonly-accessible (via
 `router.access('readonly')` on servers that support it), so with SignalK's
 `allow_readonly` security setting enabled they work without a login
 session — useful for a browser, like a Kindle's, that can't do SignalK's

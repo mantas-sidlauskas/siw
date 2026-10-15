@@ -18,6 +18,18 @@
       "height": 200,
       "format": "png",
       "windowMinutes": 30
+    },
+    {
+      "id": "sog",
+      "type": "numeric",
+      "width": 240,
+      "height": 120,
+      "format": "svg",
+      "path": "navigation.speedOverGround",
+      "conversion": "mpsToKnots",
+      "unit": "kt",
+      "decimals": 1,
+      "label": "SOG"
     }
   ]
 }

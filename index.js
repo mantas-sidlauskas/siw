@@ -5,6 +5,7 @@ const { renderWindTrend, renderWindSpeedTrend, renderWindDirectionTrend } = requ
 const { renderManeuverScore } = require('./lib/render-maneuver');
 const { fetchWindTrendHistory, fetchManeuverHistory } = require('./lib/history-client');
 const { renderDashboardHtml } = require('./lib/render-dashboard');
+const { renderLiveDashboardHtml } = require('./lib/render-live-dashboard');
 
 const WIND_RENDERERS = {
   windTrend: renderWindTrend,
@@ -54,6 +55,18 @@ module.exports = function createPlugin(server) {
         res.set('Content-Type', 'text/html').send(renderDashboardHtml(pages, pageIndex));
       });
 
+      getReadonly('/dashboard-live', (req, res) => {
+        let pages;
+        try {
+          pages = loadPages(server.getDataDirPath());
+        } catch (err) {
+          return res.status(500).send(`Failed to load components: ${err.message}`);
+        }
+        const requestedPage = Number.parseInt(req.query.page, 10);
+        const pageIndex = Number.isInteger(requestedPage) ? requestedPage : 0;
+        res.set('Content-Type', 'text/html').send(renderLiveDashboardHtml(pages, pageIndex));
+      });
+
       getReadonly('/components', (req, res) => {
         let components;
         try {
@@ -90,7 +103,8 @@ module.exports = function createPlugin(server) {
             const history = await fetchWindTrendHistory(req, component.windowMinutes);
             const sogNode = server.getSelfPath('navigation.speedOverGround');
             const speedOverGround = sogNode && typeof sogNode.value === 'number' ? sogNode.value : null;
-            rendered = WIND_RENDERERS[component.type](component, history, { speedOverGround });
+            const showHeaderBoxes = req.query.headerBoxes !== '0';
+            rendered = WIND_RENDERERS[component.type](component, history, { speedOverGround, showHeaderBoxes });
           }
 
           res.set('Content-Type', rendered.contentType);

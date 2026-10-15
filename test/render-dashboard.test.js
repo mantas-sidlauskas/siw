@@ -21,6 +21,24 @@ test('uses a white background, suited to a Kindle e-ink screen', () => {
   assert.match(html, /body\s*\{[^}]*background:\s*#fff[^}]*\}/);
 });
 
+test('renders images pixelated rather than smoothed, so CSS-scaled images stay crisp on e-ink', () => {
+  const pages = [{ title: '', components: [] }];
+  const html = renderDashboardHtml(pages, 0, { now: () => 1700000000000 });
+  assert.match(html, /body\s*\{[^}]*image-rendering:\s*pixelated[^}]*\}/);
+});
+
+test('scales images down to fit the viewport instead of overflowing a smaller screen', () => {
+  // A component configured larger than a given device's actual viewport (e.g.
+  // 720x860 on a Kindle reporting a 536x616 browser viewport) must shrink to
+  // fit rather than get clipped or force scrolling - this is CSS-only (no
+  // device detection), since Kindle's User-Agent doesn't vary by screen size.
+  const pages = [{ title: '', components: [] }];
+  const html = renderDashboardHtml(pages, 0, { now: () => 1700000000000 });
+  assert.match(html, /img\s*\{[^}]*max-width:\s*100%[^}]*\}/);
+  assert.match(html, /img\s*\{[^}]*max-height:\s*100vh[^}]*\}/);
+  assert.match(html, /img\s*\{[^}]*height:\s*auto[^}]*\}/);
+});
+
 test('renders one img per component, in order', () => {
   const pages = [
     {

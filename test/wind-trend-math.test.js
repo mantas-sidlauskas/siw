@@ -87,6 +87,12 @@ test('computePanelLayout keeps line widths at their historical minimums for smal
   assert.equal(layout.centerLineWidth, 1.5);
 });
 
+test('computePanelLayout reserves no header space when showHeaderBoxes is false, so the chart fills the full height', () => {
+  const layout = computePanelLayout(300, 860, ['speed'], { showHeaderBoxes: false });
+  assert.equal(layout.headerHeight, 0);
+  assert.equal(layout.chartTop, layout.tickFontPx + 4);
+});
+
 test('computePanelLayout scales line widths up for a much taller chart, so they stay visible at a distance', () => {
   const small = computePanelLayout(300, 150, ['speed']);
   const big = computePanelLayout(720, 860, ['speed']);

@@ -101,6 +101,24 @@ test('GET /dashboard with no page param, or a garbage one, falls back to the fir
   }
 });
 
+test('GET /dashboard-live renders a live-updating dashboard with a WebSocket-fed span for numeric components', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [{ id: 'depth', type: 'numeric', width: 100, height: 50, path: 'environment.depth.belowTransducer', unit: 'm', decimals: 1, label: 'Depth' }],
+  });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/dashboard-live`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /id="live-depth"/);
+    assert.doesNotMatch(body, /components\/depth\/image/);
+  } finally {
+    httpServer.close();
+  }
+});
+
 test('GET /components/:id/image renders a wind-trend component with the live navigation.speedOverGround value', async () => {
   const dir = tmpDir();
   writeConfig(dir, { components: [{ id: 'twd', type: 'windDirectionTrend', width: 300, height: 150, windowMinutes: 30 }] });
@@ -158,6 +176,25 @@ test('GET /components/:id/image renders a maneuverScore component by detecting a
   }
 });
 
+test('GET /components/:id/image?headerBoxes=0 renders a wind-trend chart without its SOG/TWS/TWD header boxes', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { components: [{ id: 'tws', type: 'windSpeedTrend', width: 300, height: 150, format: 'svg', windowMinutes: 30 }] });
+  const historyData = [
+    ['2026-01-01T00:00:00Z', 4.7, 5],
+    ['2026-01-01T00:05:00Z', 4.8, 6],
+  ];
+  const { httpServer, baseUrl } = await startApp(makeServer(dir, { 'navigation.speedOverGround': 2.5 }), { historyData });
+  try {
+    const withBoxes = await (await fetch(`${baseUrl}/components/tws/image`)).text();
+    assert.match(withBoxes, /text-anchor="end"[^>]*>SOG</);
+
+    const withoutBoxes = await (await fetch(`${baseUrl}/components/tws/image?headerBoxes=0`)).text();
+    assert.doesNotMatch(withoutBoxes, /text-anchor="end"[^>]*>SOG</);
+  } finally {
+    httpServer.close();
+  }
+});
+
 test('registers the dashboard, components list, and component image routes as readonly-accessible', () => {
   // SignalK's security layer only exempts a plugin route from requiring admin
   // login (e.g. under allow_readonly) when the plugin opts it in via
@@ -177,7 +214,7 @@ test('registers the dashboard, components list, and component image routes as re
   plugin.registerWithRouter(router);
 
   const readonlyPaths = registered.filter((r) => r.permission === 'readonly').map((r) => r.path).sort();
-  assert.deepEqual(readonlyPaths, ['/components', '/components/:id/image', '/dashboard']);
+  assert.deepEqual(readonlyPaths, ['/components', '/components/:id/image', '/dashboard', '/dashboard-live']);
 });
 
 test('GET /components lists configured components', async () => {

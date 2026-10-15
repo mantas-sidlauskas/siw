@@ -14,36 +14,6 @@
       ]
     },
     {
-      "title": "Wind Speed",
-      "components": [
-        {
-          "id": "tws",
-          "type": "windSpeedTrend",
-          "width": 720,
-          "height": 860,
-          "format": "png",
-          "windowMinutes": 30
-        }
-      ]
-    },
-    {
-      "title": "Speed Over Ground",
-      "components": [
-        {
-          "id": "sog",
-          "type": "numeric",
-          "width": 720,
-          "height": 860,
-          "format": "png",
-          "path": "navigation.speedOverGround",
-          "conversion": "mpsToKnots",
-          "unit": "kt",
-          "decimals": 1,
-          "label": "SOG"
-        }
-      ]
-    },
-    {
       "title": "Maneuver Score",
       "components": [
         {

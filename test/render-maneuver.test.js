@@ -79,3 +79,22 @@ test('renders JPEG when format is jpeg', () => {
   assert.equal(contentType, 'image/jpeg');
   assert.ok(buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])));
 });
+
+test('renders SVG with correct dimensions and the maneuver type as text', async () => {
+  const component = { width: 300, height: 200, format: 'svg' };
+  const { buffer, contentType } = renderManeuverScore(component, { data: TACK_ROWS });
+  assert.equal(contentType, 'image/svg+xml');
+  const image = await loadImage(buffer);
+  assert.equal(image.width, 300);
+  assert.equal(image.height, 200);
+  assert.match(buffer.toString('utf8'), />TACK</);
+});
+
+test('renders an SVG placeholder at the configured size when history is null', async () => {
+  const component = { width: 300, height: 200, format: 'svg' };
+  const { buffer, contentType } = renderManeuverScore(component, null);
+  assert.equal(contentType, 'image/svg+xml');
+  const image = await loadImage(buffer);
+  assert.equal(image.width, 300);
+  assert.equal(image.height, 200);
+});

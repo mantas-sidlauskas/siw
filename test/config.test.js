@@ -52,6 +52,15 @@ test('defaults unsupported format to png', () => {
   assert.equal(result[0].format, 'png');
 });
 
+test('accepts svg as a valid format', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    components: [{ id: 'g', type: 'numeric', width: 100, height: 100, path: 'foo.bar', format: 'svg' }],
+  });
+  const result = loadComponents(dir);
+  assert.equal(result[0].format, 'svg');
+});
+
 test('normalizes numeric defaults (unit, decimals, label)', () => {
   const dir = tmpDir();
   writeConfig(dir, { components: [{ id: 'g', type: 'numeric', width: 100, height: 100, path: 'foo.bar' }] });

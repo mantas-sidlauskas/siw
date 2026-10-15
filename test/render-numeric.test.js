@@ -39,6 +39,33 @@ test('renders JPEG when format is jpeg', () => {
   assert.ok(buffer.subarray(0, 3).equals(JPEG_SIGNATURE));
 });
 
+test('renders SVG with correct dimensions when format is svg', async () => {
+  const component = { width: 200, height: 100, format: 'svg', label: 'Depth', unit: 'm', decimals: 1 };
+  const { buffer, contentType } = renderNumeric(component, 12.34);
+  assert.equal(contentType, 'image/svg+xml');
+  const image = await loadImage(buffer);
+  assert.equal(image.width, 200);
+  assert.equal(image.height, 100);
+});
+
+test('SVG output contains the formatted value and label as text', () => {
+  const component = { width: 200, height: 100, format: 'svg', label: 'Depth', unit: 'm', decimals: 1 };
+  const { buffer } = renderNumeric(component, 12.34);
+  const svg = buffer.toString('utf8');
+  assert.match(svg, /<svg/);
+  assert.match(svg, />Depth</);
+  assert.match(svg, />12\.3 m</);
+});
+
+test('renders an SVG placeholder at the configured size when value is null', async () => {
+  const component = { width: 150, height: 80, format: 'svg', label: '', unit: '', decimals: 1 };
+  const { buffer, contentType } = renderNumeric(component, null);
+  assert.equal(contentType, 'image/svg+xml');
+  const image = await loadImage(buffer);
+  assert.equal(image.width, 150);
+  assert.equal(image.height, 80);
+});
+
 test('applies the configured conversion to the raw value before display', () => {
   const converted = { width: 150, height: 80, format: 'png', label: '', unit: 'kt', decimals: 1, conversion: 'mpsToKnots' };
   const raw = { width: 150, height: 80, format: 'png', label: '', unit: 'kt', decimals: 1 };
