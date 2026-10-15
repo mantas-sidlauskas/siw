@@ -188,6 +188,41 @@ test('renders at the configured size whether or not showHeaderBoxes is set', asy
   assert.equal(image.height, 150);
 });
 
+test('draws the raw (gust) line near-black instead of faint gray, for visibility from a distance', () => {
+  const component = { width: 300, height: 150, format: 'svg' };
+  const history = {
+    data: [
+      ['2026-01-01T00:00:00Z', 270 * DEG, 10],
+      ['2026-01-01T00:05:00Z', 275 * DEG, 11],
+      ['2026-01-01T00:10:00Z', 280 * DEG, 9],
+    ],
+  };
+  const svg = renderWindSpeedTrend(component, history).buffer.toString('utf8');
+  const rawLine = svg.match(/<path d="[^"]+"[^>]*stroke="rgb\(0, 0, 0\)"[^>]*stroke-opacity="([^"]+)"/);
+  assert.ok(rawLine, 'expected the raw-line path to use a black stroke with opacity');
+  assert.ok(Number(rawLine[1]) >= 0.7, `expected near-black (opacity >= 0.7), got ${rawLine[1]}`);
+});
+
+test('draws the smoothed (median) line fully black, whether above or below the center value', () => {
+  const component = { width: 300, height: 150, format: 'svg' };
+  // Values that go both below and above the centered range's mean, so both
+  // branches of the old above/below-center color logic would have fired.
+  const history = {
+    data: [
+      ['2026-01-01T00:00:00Z', 270 * DEG, 5],
+      ['2026-01-01T00:05:00Z', 270 * DEG, 15],
+      ['2026-01-01T00:10:00Z', 270 * DEG, 5],
+      ['2026-01-01T00:15:00Z', 270 * DEG, 15],
+    ],
+  };
+  const svg = renderWindSpeedTrend(component, history).buffer.toString('utf8');
+  assert.doesNotMatch(svg, /#b00020/);
+  assert.doesNotMatch(svg, /#00701a/);
+  const trendSegments = [...svg.matchAll(/<path d="[^"]+" fill="none" stroke="(#[0-9a-f]{6})" stroke-width="6/g)];
+  assert.ok(trendSegments.length > 0, 'expected trend-line segments at the doubled width');
+  trendSegments.forEach(([, color]) => assert.equal(color, '#000000'));
+});
+
 test('SVG wind trend draws disconnected line segments across a data gap without a spurious connecting line', () => {
   // Mirrors the PNG raw-line behavior: a non-finite reading breaks the
   // polyline into separate subpaths instead of connecting across the gap.
@@ -205,7 +240,7 @@ test('SVG wind trend draws disconnected line segments across a data gap without 
   };
   const { buffer } = renderWindSpeedTrend(component, history);
   const svg = buffer.toString('utf8');
-  const rawLinePath = svg.match(/<path d="([^"]+)"[^>]*stroke="rgb\(0, 0, 0\)"[^>]*stroke-opacity="0.3"/);
+  const rawLinePath = svg.match(/<path d="([^"]+)"[^>]*stroke="rgb\(0, 0, 0\)"[^>]*stroke-opacity="0.75"/);
   assert.ok(rawLinePath, 'expected a raw-line <path> element');
   const moveCommands = rawLinePath[1].match(/M/g) || [];
   assert.equal(moveCommands.length, 2, `expected two disconnected subpaths, got d="${rawLinePath[1]}"`);

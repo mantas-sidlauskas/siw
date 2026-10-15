@@ -81,9 +81,12 @@ test('computePanelLayout keeps the axis tick/time-label font small relative to t
 });
 
 test('computePanelLayout keeps line widths at their historical minimums for small chart sizes', () => {
+  // rawLineWidth/trendLineWidth were doubled (2026-10) for e-ink visibility
+  // from a distance - the raw ("gust") and smoothed ("median") lines were
+  // barely visible at the old widths.
   const layout = computePanelLayout(300, 150, ['speed']);
-  assert.equal(layout.rawLineWidth, 1);
-  assert.equal(layout.trendLineWidth, 3);
+  assert.equal(layout.rawLineWidth, 2);
+  assert.equal(layout.trendLineWidth, 6);
   assert.equal(layout.centerLineWidth, 1.5);
 });
 
