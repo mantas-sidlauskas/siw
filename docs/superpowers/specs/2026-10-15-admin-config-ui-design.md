@@ -144,18 +144,51 @@ enforced anywhere; this spec adds the first actual enforcement of it.
 
 ## Frontend: `/public`
 
-New files: `public/index.html`, `public/admin.js`, `public/admin.css`.
-Plain HTML/CSS/JS (no build step, no framework) — consistent with every
-other page this plugin renders.
+New files: `public/index.html`, `public/admin.js`, `public/admin.css`,
+`public/icon.svg`. Theme and conventions are reused directly from the
+sibling plugin `signalk-replay-plugin` (same author), which already has a
+working admin webapp embedded in SignalK's CoreUI/Bootstrap admin shell:
 
-All `fetch()` calls from `admin.js` to the new routes must pass
-`credentials: 'include'` — SignalK's embedded-webapp auth is cookie-based
-shared sessions, and a fetch without that option silently drops the auth
-cookie, which would otherwise surface as a confusing 401 only once this
-runs inside the real admin UI (not when hitting the routes directly with
-curl while developing, which doesn't go through the same cookie flow).
+- **Borrow the host admin's own stylesheet instead of inventing a theme.**
+  `index.html` carries the same inline bootstrap-loader script
+  `signalk-replay-plugin` uses: fetch `/admin/.vite/manifest.json`, inject
+  every `<link rel="stylesheet">` it lists (servers ≥ 2.27.0); on failure,
+  fall back to fetching `/` and scraping its first stylesheet `<link>`
+  (older servers). `main.css` (named `admin.css` here) only carries small
+  page-specific tweaks on top — the `[hidden] { display: none !important; }`
+  override (Bootstrap's `.d-flex` etc. otherwise beats the plain `hidden`
+  attribute) and any one-off layout rules the Bootstrap classes below don't
+  cover. No bespoke color palette, no custom component styling.
+- **Markup is plain Bootstrap/CoreUI**, matching `signalk-replay-plugin`'s
+  `index.html` structure: `<body class="app header-fixed">`, an
+  `app-header navbar navbar-light bg-white` header with the icon + title,
+  content in a `card`/`card-header`/`card-body`, `form-label`/`form-select`/
+  `form-check`/`form-range` for inputs, `btn btn-primary`/`btn
+  btn-outline-secondary`/`btn btn-outline-danger` for actions, `d-flex
+  align-items-center gap-2` for inline control rows. **No Bootstrap JS
+  bundle is loaded** (same as the sibling plugin), so only plain form
+  controls are used — no JS-dependent components like modals or dropdowns.
+- **`admin.js` follows the same conventions**: a single `'use strict'` IIFE,
+  `var` throughout (not just a style choice — matches the ES2019 ceiling
+  this whole project already targets for the Kindle browser, and there's no
+  reason for the admin page's JS to diverge from that even though admins
+  aren't using a Kindle to view it), an absolute `API = '/plugins/signalk-image-widgets'`
+  prefix for every fetch call (this page is served from the webapp's own
+  static mount, a different path than the plugin's REST routes), and a
+  simple `#message` element + `showError()` for surfacing errors — no
+  custom modal/toast system.
+- **No `credentials: 'include'` on fetch calls.** `signalk-replay-plugin`'s
+  `app.js` doesn't set it on any of its ~8 fetch calls and works correctly
+  against SignalK's admin auth — same-origin requests send cookies by
+  default, so this isn't needed (corrected from an earlier draft of this
+  spec, which assumed otherwise from SignalK's webapp docs without checking
+  a real working example).
+- **`package.json`** gets a `signalk.appIcon` too, matching the sibling
+  plugin's pattern (`"appIcon": "./icon.svg"`, `"displayName": "SignalK
+  Image Widgets"`) — a minimal single-color SVG icon, not an elaborate
+  asset.
 
-Layout:
+Layout (page content, inside the card):
 - **Left sidebar**: list of pages (title + component count), with
   add/remove/move-up/move-down controls and an inline-editable title field.
   Selecting a page shows it in the main panel.
@@ -206,7 +239,15 @@ Layout:
 `signalk-plugin-configurator`'s exact embedding behavior (how the admin UI
 loads and sizes the iframe/content, whether it passes any context) isn't
 fully documented in SignalK's docs — this was confirmed by web search, not
-by reading SignalK server's own source. The implementation plan should
-budget time to verify this against a real signalk-server instance (the
-`signalk` container already set up this session) early, rather than
-discovering a mismatch late.
+by reading SignalK server's own source. `signalk-replay-plugin`'s
+stylesheet-loading and absolute-API-prefix conventions, which this spec
+reuses, were proven out under `signalk-webapp` (a full top-level page load,
+not an iframe) — if `signalk-plugin-configurator` embeds via iframe instead,
+relative paths like `/admin/.vite/manifest.json` should still resolve
+correctly (iframes share the top-level document's origin unless explicitly
+sandboxed otherwise), but this is a real assumption, not a verified fact.
+The implementation plan should budget time to verify both of these against
+a real signalk-server instance (the `signalk` container already set up this
+session) early, rather than discovering a mismatch late — and fall back to
+plain `signalk-webapp` (exactly matching the sibling plugin) if
+`signalk-plugin-configurator` turns out to behave unexpectedly.
