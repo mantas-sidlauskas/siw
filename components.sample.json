@@ -1,0 +1,35 @@
+{
+  "components": [
+    {
+      "id": "depth",
+      "type": "numeric",
+      "width": 240,
+      "height": 120,
+      "format": "png",
+      "path": "environment.depth.belowTransducer",
+      "unit": "m",
+      "decimals": 1,
+      "label": "Depth"
+    },
+    {
+      "id": "windtrend",
+      "type": "windTrend",
+      "width": 480,
+      "height": 200,
+      "format": "png",
+      "windowMinutes": 30
+    },
+    {
+      "id": "sog",
+      "type": "numeric",
+      "width": 240,
+      "height": 120,
+      "format": "svg",
+      "path": "navigation.speedOverGround",
+      "conversion": "mpsToKnots",
+      "unit": "kt",
+      "decimals": 1,
+      "label": "SOG"
+    }
+  ]
+}

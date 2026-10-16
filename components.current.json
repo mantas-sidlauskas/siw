@@ -1,0 +1,30 @@
+{
+  "pages": [
+    {
+      "title": "Wind Direction",
+      "components": [
+        {
+          "id": "twd",
+          "type": "windDirectionTrend",
+          "width": 720,
+          "height": 860,
+          "format": "png",
+          "windowMinutes": 30
+        }
+      ]
+    },
+    {
+      "title": "Maneuver Score",
+      "components": [
+        {
+          "id": "maneuver",
+          "type": "maneuverScore",
+          "width": 720,
+          "height": 860,
+          "format": "png",
+          "windowMinutes": 30
+        }
+      ]
+    }
+  ]
+}

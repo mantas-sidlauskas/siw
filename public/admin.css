@@ -1,0 +1,35 @@
+/* ─── Suppress SignalK navbar-brand logo/text injected by CoreUI ──────── */
+.app-header .navbar-brand {
+  background-image: none !important;
+  width: auto !important;
+}
+.app-header .navbar-brand::before,
+.app-header .navbar-brand::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* ─── Bootstrap's .d-flex (and similar display utilities) set display
+   with !important, which otherwise beats the native [hidden] attribute's
+   un-prefixed display:none — toggling an element's `hidden` property
+   from admin.js would silently stop working on anything also using one
+   of those utility classes without this. ─────────────────────────────── */
+[hidden] {
+  display: none !important;
+}
+
+/* ─── App title ─────────────────────────────────────────────────────── */
+.app-title {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #29363d;
+}
+
+/* ─── Selected page/component row in the sidebar/list ─────────────────── */
+.list-group-item.active-item {
+  background-color: #e7f1ff;
+}
+
+#message.text-danger {
+  color: #dc3545;
+}
