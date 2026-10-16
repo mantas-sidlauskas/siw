@@ -1,12 +1,17 @@
 {
-  "name": "signalk-image-widgets",
+  "name": "siw",
   "version": "0.1.0",
   "description": "Renders configured SignalK paths as raster images for simple/low-power displays.",
   "main": "index.js",
   "license": "MIT",
   "keywords": [
-    "signalk-node-server-plugin"
+    "signalk-node-server-plugin",
+    "signalk-webapp"
   ],
+  "signalk": {
+    "displayName": "SignalK Image Widgets",
+    "appIcon": "./icon.svg"
+  },
   "signalk-plugin-enabled-by-default": false,
   "engines": {
     "node": ">=18"

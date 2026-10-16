@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { loadComponents, loadPages } = require('../lib/config');
+const { loadComponents, loadPages, loadPagesWithSkipped, validatePages } = require('../lib/config');
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'siw-'));
@@ -216,4 +216,101 @@ test('loadComponents flattens components across every page', () => {
     ],
   });
   assert.deepEqual(loadComponents(dir).map((c) => c.id), ['depth', 'windtrend']);
+});
+
+test('validatePages returns no errors for a valid multi-page config', () => {
+  const pages = [
+    { title: 'Nav', components: [{ id: 'depth', type: 'numeric', width: 100, height: 50, path: 'environment.depth.belowTransducer' }] },
+    { title: 'Wind', components: [{ id: 'windtrend', type: 'windTrend', width: 300, height: 150 }] },
+  ];
+  assert.deepEqual(validatePages(pages), []);
+});
+
+test('validatePages returns no errors for an empty config (no pages, or a page with no components)', () => {
+  assert.deepEqual(validatePages([]), []);
+  assert.deepEqual(validatePages([{ title: 'Empty', components: [] }]), []);
+});
+
+test('validatePages reports the page and componentIndex of an invalid component', () => {
+  const pages = [
+    { title: 'Nav', components: [{ id: 'good', type: 'numeric', width: 100, height: 50, path: 'a.b' }] },
+    { title: 'Bad', components: [{ id: 'bad', type: 'nope', width: 100, height: 50 }] },
+  ];
+  const errors = validatePages(pages);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].page, 1);
+  assert.equal(errors[0].componentIndex, 0);
+  assert.equal(errors[0].id, 'bad');
+  assert.match(errors[0].message, /invalid "type"/);
+});
+
+test('validatePages reports a duplicate id used across two different pages', () => {
+  const pages = [
+    { title: 'A', components: [{ id: 'dup', type: 'numeric', width: 100, height: 50, path: 'a.b' }] },
+    { title: 'B', components: [{ id: 'dup', type: 'numeric', width: 100, height: 50, path: 'c.d' }] },
+  ];
+  const errors = validatePages(pages);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].page, 1);
+  assert.equal(errors[0].componentIndex, 0);
+  assert.match(errors[0].message, /duplicate id/);
+});
+
+test('validatePages does not flag an id that only appears once', () => {
+  const pages = [{ title: 'A', components: [{ id: 'solo', type: 'numeric', width: 100, height: 50, path: 'a.b' }] }];
+  assert.deepEqual(validatePages(pages), []);
+});
+
+test('validatePages rejects a null page entry without throwing', () => {
+  const errors = validatePages([null]);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].page, 0);
+  assert.equal(errors[0].componentIndex, null);
+  assert.match(errors[0].message, /object/);
+  assert.match(errors[0].message, /"components" array/);
+});
+
+test('validatePages rejects a string page entry without throwing', () => {
+  const errors = validatePages(['x']);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].page, 0);
+  assert.equal(errors[0].componentIndex, null);
+  assert.match(errors[0].message, /object/);
+  assert.match(errors[0].message, /"components" array/);
+});
+
+test('validatePages rejects a page whose "components" is not an array, rather than silently coercing it to empty', () => {
+  const errorsNull = validatePages([{ title: 'Bad', components: null }]);
+  assert.equal(errorsNull.length, 1);
+  assert.equal(errorsNull[0].page, 0);
+  assert.equal(errorsNull[0].componentIndex, null);
+  assert.match(errorsNull[0].message, /"components" must be an array/);
+
+  const errorsString = validatePages([{ title: 'Bad', components: 'not an array' }]);
+  assert.equal(errorsString.length, 1);
+  assert.match(errorsString[0].message, /"components" must be an array/);
+});
+
+test('loadPagesWithSkipped exposes skipped invalid components per page while loadPages stays unchanged', () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    pages: [
+      {
+        title: 'Mixed',
+        components: [
+          { id: 'bad', type: 'nope', width: 100, height: 100 },
+          { id: 'good', type: 'numeric', width: 100, height: 100, path: 'foo.bar' },
+        ],
+      },
+    ],
+  });
+  const pages = loadPages(dir);
+  assert.deepEqual(pages[0].components.map((c) => c.id), ['good']);
+
+  const pagesWithSkipped = loadPagesWithSkipped(dir);
+  assert.equal(pagesWithSkipped.length, 1);
+  assert.deepEqual(pagesWithSkipped[0].components.map((c) => c.id), ['good']);
+  assert.equal(pagesWithSkipped[0].skipped.length, 1);
+  assert.equal(pagesWithSkipped[0].skipped[0].id, 'bad');
+  assert.match(pagesWithSkipped[0].skipped[0].message, /invalid "type"/);
 });

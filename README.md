@@ -28,10 +28,17 @@ them is just an edit to `components.json`.
 
 ## Configuration
 
-Copy `components.sample.json` to `components.json` in this plugin's SignalK
-data directory and edit it directly — there is no admin-UI configuration
-form. The file is re-read on every request, so changes take effect
-immediately.
+Edit `components.json` through the admin UI — open SignalK's **Webapps**
+list and click "SignalK Image Widgets", or go directly to
+`http://<your-server>/siw/` while logged in as an admin.
+It supports adding/removing/reordering pages and components, a live preview
+of each component against current SignalK data as you edit it, and a raw
+JSON view for bulk edits. Changes take effect on Save; `components.json`
+remains a plain file in this plugin's SignalK data directory if you'd
+rather edit it by hand instead — copy `components.sample.json` there to
+start from scratch, or read it from the admin UI's raw JSON view. The file
+is re-read on every dashboard request either way, so changes (from either
+path) take effect immediately.
 
 The config can describe either a single implicit page (a flat `components`
 array, as in `components.sample.json`) or multiple pages, each with its own
@@ -74,12 +81,25 @@ page.
   `height`).
 - `GET /components/:id/image` — renders that component fresh and returns
   the image bytes with the matching `Content-Type`.
+- `GET /admin/config` / `PUT /admin/config` — read or replace the full
+  page/component configuration as JSON. Backs the admin UI; `PUT` validates
+  the entire document (including that every component `id` is unique
+  across the whole config, not just within one page) before writing
+  anything, and rejects with a structured list of errors otherwise.
+- `POST /admin/preview` — renders a single component definition (which
+  need not be saved anywhere yet) against live SignalK data, the same way
+  `GET /components/:id/image` renders a saved one. Backs the admin UI's
+  live preview.
 
-All four routes are registered as readonly-accessible (via
-`router.access('readonly')` on servers that support it), so with SignalK's
-`allow_readonly` security setting enabled they work without a login
-session — useful for a browser, like a Kindle's, that can't do SignalK's
-login flow.
+The four routes above with no `/admin/` prefix (`/dashboard`,
+`/dashboard-live`, `/components`, `/components/:id/image`) are registered
+as readonly-accessible (via `router.access('readonly')` on servers that
+support it), so with SignalK's `allow_readonly` security setting enabled
+they work without a login session — useful for a browser, like a Kindle's,
+that can't do SignalK's login flow. `GET /admin/config`, `PUT
+/admin/config`, and `POST /admin/preview` are deliberately **not**
+readonly-accessible — they require normal SignalK admin authentication,
+same as any other configuration change.
 
 ## Development
 

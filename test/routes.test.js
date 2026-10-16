@@ -26,7 +26,7 @@ function makeServer(dataDir, selfValues = {}) {
   };
 }
 
-async function startApp(server, { historyData } = {}) {
+async function startApp(server, { historyData, simulateHostBodyParser } = {}) {
   const app = express();
   if (historyData) {
     // fetchWindTrendHistory calls back into this same server's own loopback
@@ -34,14 +34,25 @@ async function startApp(server, { historyData } = {}) {
     // real (non-placeholder) wind-trend render end to end.
     app.get('/signalk/v2/api/history/values', (req, res) => res.json({ data: historyData }));
   }
+  if (simulateHostBodyParser) {
+    // Real signalk-server globally mounts bodyParser.json() on its shared
+    // Express app before any plugin router runs, which fully consumes the
+    // request stream and leaves req.body already populated. Mounting
+    // express.json() here, before the plugin router, reproduces that so
+    // tests can catch regressions that only manifest once something
+    // upstream has already parsed the body.
+    app.use(express.json());
+  }
   const router = express.Router();
   const plugin = createPlugin(server);
   plugin.registerWithRouter(router);
-  app.use('/plugins/signalk-image-widgets', router);
+  // Derived from plugin.id, not hardcoded, so this mount path can never
+  // drift from the real one if the plugin id ever changes again.
+  app.use(`/plugins/${plugin.id}`, router);
   const httpServer = http.createServer(app);
   await new Promise((resolve) => httpServer.listen(0, resolve));
   const { port } = httpServer.address();
-  return { httpServer, baseUrl: `http://localhost:${port}/plugins/signalk-image-widgets` };
+  return { httpServer, baseUrl: `http://localhost:${port}/plugins/${plugin.id}` };
 }
 
 test('GET /dashboard renders an HTML dashboard with an img per configured component', async () => {
@@ -215,6 +226,8 @@ test('registers the dashboard, components list, and component image routes as re
 
   const readonlyPaths = registered.filter((r) => r.permission === 'readonly').map((r) => r.path).sort();
   assert.deepEqual(readonlyPaths, ['/components', '/components/:id/image', '/dashboard', '/dashboard-live']);
+  assert.ok(!readonlyPaths.includes('/admin/config'), 'admin/config must require admin auth, not be readonly-accessible');
+  assert.ok(!readonlyPaths.includes('/admin/preview'), 'admin/preview must require admin auth, not be readonly-accessible');
 });
 
 test('GET /components lists configured components', async () => {
@@ -228,6 +241,351 @@ test('GET /components lists configured components', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(body, [{ id: 'depth', type: 'numeric', width: 100, height: 50 }]);
   httpServer.close();
+});
+
+test('GET /admin/config returns the current pages', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Nav', components: [{ id: 'depth', type: 'numeric', width: 100, height: 50, path: 'a.b', format: 'png' }] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.pages.length, 1);
+    assert.equal(body.pages[0].components[0].id, 'depth');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config with a valid document writes it, and GET /components reflects the change', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Old', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const newConfig = { pages: [{ title: 'New', components: [{ id: 'sog', type: 'numeric', width: 200, height: 100, path: 'navigation.speedOverGround' }] }] };
+    const putRes = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newConfig),
+    });
+    assert.equal(putRes.status, 200);
+
+    const listRes = await fetch(`${baseUrl}/components`);
+    const list = await listRes.json();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, 'sog');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config accepts an empty pages array', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Old', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: [] }),
+    });
+    assert.equal(res.status, 200);
+    const getRes = await fetch(`${baseUrl}/admin/config`);
+    assert.deepEqual((await getRes.json()).pages, []);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config with an invalid component returns 400 with errors and does not modify the file', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Original', components: [{ id: 'keep', type: 'numeric', width: 100, height: 50, path: 'a.b', format: 'png' }] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const badConfig = { pages: [{ title: 'Bad', components: [{ id: 'oops', type: 'not-a-real-type', width: 100, height: 50 }] }] };
+    const putRes = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(badConfig),
+    });
+    assert.equal(putRes.status, 400);
+    const putBody = await putRes.json();
+    assert.equal(putBody.errors.length, 1);
+    assert.equal(putBody.errors[0].id, 'oops');
+
+    const getRes = await fetch(`${baseUrl}/admin/config`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.pages[0].title, 'Original');
+    assert.equal(getBody.pages[0].components[0].id, 'keep');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config rejects a duplicate id used across two different pages', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Original', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const dupConfig = {
+      pages: [
+        { title: 'A', components: [{ id: 'dup', type: 'numeric', width: 100, height: 50, path: 'a.b' }] },
+        { title: 'B', components: [{ id: 'dup', type: 'numeric', width: 100, height: 50, path: 'c.d' }] },
+      ],
+    };
+    const res = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dupConfig),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.errors[0].message, /duplicate id/);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config with a malformed JSON body returns 400', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Original', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not json',
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config with a null page entry returns 400 promptly instead of hanging (Finding 1 regression)', { timeout: 5000 }, async () => {
+  // Regression test: validatePages used to do `page.components` with no
+  // shape check on `page` itself, so a body like {"pages":[null]} threw
+  // synchronously inside the async PUT handler with no surrounding
+  // try/catch. Uncaught in an async Express handler, that becomes an
+  // unhandled promise rejection: the response never gets sent and the
+  // request hangs forever. The explicit timeout turns a regression back
+  // into "hangs forever" into a fast, clear failure.
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Original', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: [null] }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.errors.length, 1);
+    assert.equal(body.errors[0].page, 0);
+
+    const getRes = await fetch(`${baseUrl}/admin/config`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.pages[0].title, 'Original');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config with a non-array "components" on a page returns 400 and does not write the file (Finding 1)', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Original', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: [{ title: 'Bad', components: null }] }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.errors[0].message, /"components" must be an array/);
+
+    const getRes = await fetch(`${baseUrl}/admin/config`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.pages[0].title, 'Original');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('GET /admin/config reports skipped invalid components separately from the (unchanged) loaded pages (Finding 2)', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, {
+    pages: [
+      {
+        title: 'Mixed',
+        components: [
+          { id: 'good', type: 'numeric', width: 100, height: 50, path: 'a.b', format: 'png' },
+          { id: 'bad', type: 'not-a-real-type', width: 100, height: 50 },
+        ],
+      },
+    ],
+  });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.pages[0].components.length, 1);
+    assert.equal(body.pages[0].components[0].id, 'good');
+    assert.equal(body.skipped.length, 1);
+    assert.equal(body.skipped[0].page, 0);
+    assert.equal(body.skipped[0].id, 'bad');
+    assert.match(body.skipped[0].message, /invalid "type"/);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('GET /admin/config returns an empty "skipped" array when nothing was dropped', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Nav', components: [{ id: 'depth', type: 'numeric', width: 100, height: 50, path: 'a.b', format: 'png' }] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const res = await fetch(`${baseUrl}/admin/config`);
+    const body = await res.json();
+    assert.deepEqual(body.skipped, []);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('PUT /admin/config still works when a host body-parser already populated req.body (real signalk-server behavior)', { timeout: 5000 }, async () => {
+  // Regression test: signalk-server mounts bodyParser.json() on its shared
+  // Express app before any plugin router runs, so by the time our route
+  // handler sees the request, req.body is already a parsed object and the
+  // raw stream has already been fully consumed (its 'data'/'end' events
+  // already fired). readJsonBody must use req.body in that case instead of
+  // trying to read the stream again, or the request hangs forever. The
+  // explicit timeout turns "hangs forever" into a fast, clear failure
+  // instead of blocking the whole suite if this regresses.
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Old', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir), { simulateHostBodyParser: true });
+  try {
+    const newConfig = { pages: [{ title: 'New', components: [{ id: 'sog', type: 'numeric', width: 200, height: 100, path: 'navigation.speedOverGround' }] }] };
+    const putRes = await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newConfig),
+    });
+    assert.equal(putRes.status, 200);
+
+    const listRes = await fetch(`${baseUrl}/components`);
+    const list = await listRes.json();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, 'sog');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('POST /admin/preview renders a draft numeric component using live data', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: '', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir, { 'navigation.speedOverGround': 2.5 }));
+  try {
+    const draft = { id: 'preview-draft', type: 'numeric', width: 200, height: 100, path: 'navigation.speedOverGround', conversion: 'mpsToKnots', unit: 'kt' };
+    const res = await fetch(`${baseUrl}/admin/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+    const buf = Buffer.from(await res.arrayBuffer());
+    assert.ok(buf.length > 0);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('POST /admin/preview renders a placeholder (200, not an error) for a numeric draft whose path has no live value', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: '', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir)); // no selfValues at all
+  try {
+    const draft = { id: 'preview-draft', type: 'numeric', width: 200, height: 100, path: 'environment.does.not.exist' };
+    const res = await fetch(`${baseUrl}/admin/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('POST /admin/preview renders a draft wind-trend component using history data', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: '', components: [] }] });
+  const historyData = [
+    ['2026-01-01T00:00:00Z', 4.7, 5],
+    ['2026-01-01T00:05:00Z', 4.8, 6],
+  ];
+  const { httpServer, baseUrl } = await startApp(makeServer(dir), { historyData });
+  try {
+    const draft = { id: 'preview-draft', type: 'windSpeedTrend', width: 300, height: 150, windowMinutes: 30 };
+    const res = await fetch(`${baseUrl}/admin/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('POST /admin/preview returns 400 for an invalid draft component', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: '', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    const draft = { id: 'bad', type: 'numeric', width: 200, height: 100 }; // missing required "path"
+    const res = await fetch(`${baseUrl}/admin/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    httpServer.close();
+  }
+});
+
+test('two successive PUT /admin/config calls leave the second one in effect (last write wins, no corruption)', async () => {
+  const dir = tmpDir();
+  writeConfig(dir, { pages: [{ title: 'Start', components: [] }] });
+  const { httpServer, baseUrl } = await startApp(makeServer(dir));
+  try {
+    await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: [{ title: 'First', components: [] }] }),
+    });
+    await fetch(`${baseUrl}/admin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages: [{ title: 'Second', components: [] }] }),
+    });
+    const getRes = await fetch(`${baseUrl}/admin/config`);
+    const body = await getRes.json();
+    assert.equal(body.pages.length, 1);
+    assert.equal(body.pages[0].title, 'Second');
+  } finally {
+    httpServer.close();
+  }
 });
 
 test('GET /components/:id/image renders a numeric PNG with a real value', async () => {
